@@ -4,15 +4,9 @@ Voice-to-text typing system using whisper.cpp with GPU acceleration.
 
 ## Why I Built This
 
-got tired of typing everything during lectures and assignments. my hands hurt after long coding sessions.
-
-i have an amd gpu on fedora linux. wanted to use whisper for voice typing but getting it to work with amd was a pain. barely any resources online about rocm setup for whisper. most guides are for nvidia cuda.
-
-ended up using the vulkan backend guide to compile whisper.cpp. took some trial and error but vulkan works great with amd. runs fast enough for real time transcription.
-
-built this wrapper around whisper.cpp so i can just talk and it types. uses the large-v3 model for best accuracy. listens for voice activity automatically and types the transcription wherever my cursor is.
-
-saves me tons of time now. no more context switching to type stuff out.
+I have an AMD gpu on Fedora PC, wanted to use whisper for voice typing but getting it to work with AMD was a pain. Very few resources online about rocm setup for whisper. Most are for Nvidia Cuda. I had to use the vulkan backend guide to compile whisper.cpp. Took some trial and error but vulkan worked with AMD. Runs fast enough for real time transcription.
+Built this wrapper around whisper.cpp so I can just talk and it types. Uses the large-v3 model for best accuracy. Listens for voice activity automatically and types the transcription wherever my cursor is.
+Saves me tons of time now. No more context switching to type stuff out. Also, when you are using AI through chat interface, you end up writing and supplying more context. 
 
 ## Installation
 
