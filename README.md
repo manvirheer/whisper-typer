@@ -1,4 +1,4 @@
-# Whisper Voice Typing
+# whisper-typer
 
 Voice-to-text typing system using whisper.cpp with GPU acceleration.
 
@@ -33,6 +33,7 @@ python3 -m whisper_voice_typing
 ## Project Structure
 
 ```
+whisper-typer/
 whisper_voice_typing/
 ├── config.py       # Configuration management
 ├── utils.py        # Logging and environment setup
