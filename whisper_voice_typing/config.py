@@ -1,73 +1,60 @@
-"""Configuration management for Whisper Voice Typing"""
-
-import shutil
+import os, shutil, sys
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .utils import is_macos
+
+def _find_whisper_dir() -> Path:
+    if d := os.environ.get("WHISPER_CPP_DIR"): return Path(d).expanduser()
+    for candidate in [Path.home() / ".local/share/whisper.cpp", Path.home() / "whisper.cpp", Path.home() / "personal/whisper.cpp"]:
+        if candidate.exists(): return candidate
+    return Path.home() / ".local/share/whisper.cpp"
 
 @dataclass
 class Config:
-    """Configuration for Whisper Voice Typing"""
+    whisper_dir: Path = field(default_factory=_find_whisper_dir)
+    headphone_mic: str = field(default_factory=lambda: os.environ.get("WHISPER_MIC", ""))
 
-    # Audio device - Leave empty for default, or specify like "bluez_input.AC:BF:71:CF:17:EF"
-    # Find with: pactl list short sources
-    headphone_mic: str = ""
+    whisper_executable: Path = field(init=False)
+    whisper_model: Path = field(init=False)
+    server_binary: Path = field(init=False)
 
-    # Whisper.cpp paths
-    whisper_dir: Path = Path.home() / "personal" / "whisper.cpp"
-    whisper_executable: Path = whisper_dir / "build/bin/whisper-cli"
-    whisper_model: Path = whisper_dir / "models/ggml-large-v3.bin"
-
-    # Audio parameters (optimized for Whisper)
     sample_rate: int = 16000
     channels: int = 1
     bit_depth: int = 16
 
-    # Server configuration
     server_host: str = "127.0.0.1"
     server_port: int = 8080
-    server_binary: Path = whisper_dir / "build/bin/whisper-server"
     server_pid_file: Path = Path("/tmp/whisper_server.pid")
 
-    # Recording parameters
-    # Wait 0.2s of audio above 2% volume to start recording (less aggressive)
-    silence_start_duration: float = 0.2
-    silence_start_threshold: str = "2%"
-    # Stop after 2.0s of silence below 2% volume (give more time for pauses)
+    silence_start_duration: float = 0.05   # fast trigger to avoid clipping speech onset
+    silence_start_threshold: str = "1.5%"
     silence_end_duration: float = 2.0
-    silence_end_threshold: str = "2%"
-    # Maximum recording duration (30 seconds)
+    silence_end_threshold: str = "1%"      # low so quiet trailing words aren't cut
     max_recording_duration: int = 30
-    # Minimum file size: 8KB = ~0.25 seconds of audio (lower threshold)
-    min_file_size: int = 8192
+    min_file_size: int = 8192              # ~0.25s of audio
 
-    # Performance settings
-    thread_count: int = 4
+    thread_count: int = field(default_factory=lambda: min(os.cpu_count() or 4, 8))
+    post_processing_delay: float = 1.0
+    no_audio_delay: float = 0.1
 
-    # Timing
-    post_processing_delay: float = 1.0  # Wait after typing to avoid re-recording
-    no_audio_delay: float = 0.1  # Brief pause when no audio detected
+    def __post_init__(self):
+        self.whisper_executable = self.whisper_dir / "build/bin/whisper-cli"
+        model_env = os.environ.get("WHISPER_MODEL")
+        self.whisper_model = Path(model_env) if model_env else self.whisper_dir / "models/ggml-large-v3-turbo.bin"
+        self.server_binary = self.whisper_dir / "build/bin/whisper-server"
 
     def validate(self, tlog) -> None:
-        """Validate configuration and check dependencies"""
         errors = []
+        if not self.whisper_executable.exists(): errors.append(f"whisper-cli not found: {self.whisper_executable}")
+        if not self.server_binary.exists(): errors.append(f"whisper-server not found: {self.server_binary}")
+        if not self.whisper_model.exists(): errors.append(f"model not found: {self.whisper_model}")
 
-        # Check required executables
-        if not self.whisper_executable.exists():
-            errors.append(f"Whisper executable not found: {self.whisper_executable}")
-        if not self.server_binary.exists():
-            errors.append(f"Whisper server not found: {self.server_binary}")
-        if not self.whisper_model.exists():
-            errors.append(f"Whisper model not found: {self.whisper_model}")
-
-        # Check required commands
-        for cmd in ['rec', 'xdotool', 'curl', 'jq']:
-            if not shutil.which(cmd):
-                errors.append(f"Required command not found: {cmd}")
+        required = ['rec', 'ffmpeg', 'osascript', 'curl'] if is_macos() else ['rec', 'xdotool', 'curl', 'jq']
+        for cmd in required:
+            if not shutil.which(cmd): errors.append(f"command not found: {cmd}")
 
         if errors:
-            for error in errors:
-                tlog.error(error)
+            for e in errors: tlog.error(e)
             tlog.footer()
-            import sys
             sys.exit(1)
