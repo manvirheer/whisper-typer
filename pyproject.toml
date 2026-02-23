@@ -1,0 +1,13 @@
+[project]
+name = "whisper-typer"
+version = "0.1.0"
+description = "local voice-to-text that types wherever your cursor is"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31.0"]
+
+[project.scripts]
+wv = "whisper_voice_typing.__main__:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"

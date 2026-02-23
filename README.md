@@ -1,78 +1,53 @@
 # whisper-typer
 
-Voice-to-text typing system using whisper.cpp with GPU acceleration.
+local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine — no API calls, no cloud, no latency.
 
-## Why I Built This
+on apple silicon it hits Metal + CoreML + Neural Engine for fast inference. linux gets vulkan/cuda.
 
-I have an AMD gpu on Fedora PC, wanted to use whisper for voice typing but getting it to work with AMD was a pain. Very few resources online about rocm setup for whisper. Most are for Nvidia Cuda. I had to use the vulkan backend guide to compile whisper.cpp. Took some trial and error but vulkan worked with AMD. Runs fast enough for real time transcription.
-Built this wrapper around whisper.cpp so I can just talk and it types. Uses the large-v3 model for best accuracy. Listens for voice activity automatically and types the transcription wherever my cursor is.
-Saves me tons of time now. No more context switching to type stuff out. Also, when you are using AI through chat interface, you end up writing and supplying more context. 
-
-## Installation
+## setup (macOS)
 
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
+brew install sox ffmpeg
+pip install -e .
+./setup.sh
+```
 
-# Ensure system dependencies are installed (Fedora)
+grant accessibility when prompted: System Settings > Privacy & Security > Accessibility.
+
+## setup (linux)
+
+```bash
+# fedora
 sudo dnf install sox xdotool curl jq
+# ubuntu
+sudo apt install sox xdotool curl jq
+
+pip install -e .
+./setup.sh
 ```
 
-## Usage
-
-### Run the Python version (recommended):
+## usage
 
 ```bash
-# Using the launcher script
-./run_voice_typing.py
-
-# Or run as a module
-python3 -m whisper_voice_typing
+wv
 ```
 
-### Run the bash version:
+that's it. talk and it types. silence detection handles start/stop automatically.
+
+## what's whisper.cpp
+
+[whisper.cpp](https://github.com/ggerganov/whisper.cpp) is a C/C++ port of OpenAI's [Whisper](https://github.com/openai/whisper) speech recognition model. it runs locally on your hardware with no python runtime overhead. the `setup.sh` script clones it, builds with GPU acceleration, and downloads the model.
+
+## config
+
+env vars, all optional:
+
+| var | default | what |
+|-----|---------|------|
+| `WHISPER_CPP_DIR` | `~/.local/share/whisper.cpp` | whisper.cpp install path |
+| `WHISPER_MODEL` | `ggml-large-v3-turbo.bin` | model file |
+| `WHISPER_MIC` | system default | mic device name |
 
 ```bash
-./run.sh
+WHISPER_MIC="MacBook Pro Microphone" wv
 ```
-
-## Project Structure
-
-```
-whisper-typer/
-whisper_voice_typing/
-├── config.py       # Configuration management
-├── utils.py        # Logging and environment setup
-├── server.py       # Whisper server management
-├── audio.py        # Audio recording and transcription
-├── app.py          # Main application logic
-├── __init__.py     # Package initialization
-└── __main__.py     # Module entry point
-
-run_voice_typing.py # Simple launcher script
-run.sh              # Legacy bash script
-requirements.txt    # Python dependencies
-```
-
-## Configuration
-
-Edit `whisper_voice_typing/config.py` to customize:
-
-- Audio device
-- Whisper model path
-- Recording parameters (silence thresholds, durations)
-- Server settings
-
-## How It Works
-
-1. **Records audio** using sox with silence detection
-2. **Transcribes** via whisper-server (fast) or direct CLI (fallback)
-3. **Types the result** using xdotool
-4. Cleans up temporary files automatically
-
-## Troubleshooting
-
-- **Dependencies missing**: Check error messages on startup
-- **Audio not detected**: Adjust silence thresholds in config.py
-- **Recording too short**: Lower `min_file_size` in config.py
-- **Server issues**: Check whisper-server binary path
