@@ -34,6 +34,21 @@ wv
 
 that's it. talk and it types. silence detection handles start/stop automatically.
 
+```
+────────────────────────────────────────────────────────────────────────────────
+TIME       │ LEVEL    │ MESSAGE
+────────────────────────────────────────────────────────────────────────────────
+14:23:01   │ INFO     │ whisper-typer activated
+14:23:01   │ INFO     │ Threads: 8
+14:23:01   │ INFO     │ Listening... (Ctrl+C to exit)
+14:23:05   │ STATUS   │ Listening...
+14:23:09   │ INFO     │ Recorded 48320 bytes
+14:23:09   │ STATUS   │ Processing...
+14:23:10   │ SUCCESS  │ Transcribed in 823ms via server
+14:23:10   │ STATUS   │ Done, waiting...
+────────────────────────────────────────────────────────────────────────────────
+```
+
 ## what's whisper.cpp
 
 [whisper.cpp](https://github.com/ggerganov/whisper.cpp) is a C/C++ port of OpenAI's [Whisper](https://github.com/openai/whisper) speech recognition model. it runs locally on your hardware with no python runtime overhead. the `setup.sh` script clones it, builds with GPU acceleration, and downloads the model.

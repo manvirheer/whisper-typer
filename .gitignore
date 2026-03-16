@@ -6,3 +6,4 @@ build/
 .venv/
 *.pyc
 .DS_Store
+.claude/

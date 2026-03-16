@@ -50,7 +50,7 @@ class Config:
         if not self.server_binary.exists(): errors.append(f"whisper-server not found: {self.server_binary}")
         if not self.whisper_model.exists(): errors.append(f"model not found: {self.whisper_model}")
 
-        required = ['rec', 'ffmpeg', 'osascript', 'curl'] if is_macos() else ['rec', 'xdotool', 'curl', 'jq']
+        required = ['rec', 'ffmpeg', 'osascript'] if is_macos() else ['rec', 'xdotool']
         for cmd in required:
             if not shutil.which(cmd): errors.append(f"command not found: {cmd}")
 

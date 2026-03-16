@@ -133,8 +133,9 @@ class AudioProcessor:
             self._transcribe_fails += 1
             tlog.warn(f"Server HTTP {resp.status_code}")
             return None
-        except Exception:
+        except requests.RequestException as e:
             self._transcribe_fails += 1
+            log.warning(f"Server request failed: {e}")
             return None
 
     def transcribe_direct(self, audio_file: Path) -> str | None:
