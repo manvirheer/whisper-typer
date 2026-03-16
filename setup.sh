@@ -4,8 +4,8 @@ set -e
 WHISPER_DIR="${WHISPER_CPP_DIR:-$HOME/.local/share/whisper.cpp}"
 MODEL="${WHISPER_MODEL_NAME:-large-v3-turbo}"
 
-echo "whisper.cpp → $WHISPER_DIR"
-echo "model → $MODEL"
+echo "whisper.cpp -> $WHISPER_DIR"
+echo "model -> $MODEL"
 
 if [ ! -d "$WHISPER_DIR" ]; then
     git clone https://github.com/ggerganov/whisper.cpp.git "$WHISPER_DIR"

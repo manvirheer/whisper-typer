@@ -34,7 +34,7 @@ class AudioProcessor:
         return self._record_macos(audio_file, timeout) if is_macos() else self._record_linux(audio_file, timeout)
 
     def _record_macos(self, audio_file: Path, timeout: int) -> Path | None:
-        # sox coreaudio has a buffer overrun bug — ffmpeg captures, sox does silence detection
+        # sox coreaudio has a buffer overrun bug, so ffmpeg captures and sox does silence detection
         device = f":{self.config.headphone_mic}" if (self.config.headphone_mic and self.config.headphone_mic != "default") else ":default"
         ffmpeg_cmd = ["ffmpeg", "-nostdin", "-f", "avfoundation", "-i", device,
                       "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", "-flush_packets", "1", "-f", "s16le", "-loglevel", "error", "pipe:1"]
@@ -67,7 +67,7 @@ class AudioProcessor:
             self._rec_fails += 1
             if sox_proc: sox_proc.kill(); sox_proc.wait()
             if ffmpeg_proc: ffmpeg_proc.kill(); ffmpeg_proc.wait()
-            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles — mic working?")
+            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles - mic working?")
             audio_file.unlink(missing_ok=True)
             return None
         except Exception as e:
@@ -99,7 +99,7 @@ class AudioProcessor:
             return self._check_audio(audio_file)
         except subprocess.TimeoutExpired:
             self._rec_fails += 1
-            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles — mic working?")
+            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles - mic working?")
             audio_file.unlink(missing_ok=True)
             return None
         except Exception as e:
@@ -187,7 +187,7 @@ class AudioProcessor:
     def _type_text(self, text: str) -> bool:
         try:
             if is_macos():
-                # save clipboard → paste → restore
+                # save clipboard, paste, restore
                 saved = None
                 try:
                     r = subprocess.run(["pbpaste"], capture_output=True, timeout=2)
@@ -207,7 +207,7 @@ class AudioProcessor:
                 if result.returncode != 0:
                     stderr = result.stderr.strip()
                     if "not allowed" in stderr or "1002" in stderr:
-                        tlog.error("Accessibility permission denied — System Settings > Privacy & Security > Accessibility")
+                        tlog.error("Accessibility permission denied - System Settings > Privacy & Security > Accessibility")
                     else:
                         tlog.error(f"osascript failed: {stderr}")
                     return False

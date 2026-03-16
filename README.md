@@ -1,6 +1,6 @@
 # whisper-typer
 
-local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine — no API calls, no cloud, no latency.
+local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine - no API calls, no cloud, no latency.
 
 on apple silicon it hits Metal + CoreML + Neural Engine for fast inference. linux gets vulkan/cuda.
 
