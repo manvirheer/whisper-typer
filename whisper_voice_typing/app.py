@@ -131,14 +131,38 @@ class WhisperVoiceTyping:
                 if state == State.LISTENING:
                     if is_speech:
                         speech_frames += 1
-                        if speech_frames >= confirmation_frames:
+                        if speech_frames == 1:
+                            # first speech frame - show "detected" immediately
                             self.state_machine.transition(State.DETECTED)
+                            self._ui_queue.put(StateUpdate(State.DETECTED))
+                        if speech_frames >= confirmation_frames:
+                            # confirmed - start recording
                             self._audio.begin_recording()
                             self._audio.accumulate(frame)
                             self.state_machine.transition(State.RECORDING)
                             self._ui_queue.put(StateUpdate(State.RECORDING, duration=0.0))
                             speech_frames = 0
                     else:
+                        if speech_frames > 0:
+                            # false trigger - back to listening
+                            self.state_machine.transition(State.LISTENING)
+                            self._ui_queue.put(StateUpdate(State.LISTENING))
+                        speech_frames = 0
+
+                elif state == State.DETECTED:
+                    if is_speech:
+                        speech_frames += 1
+                        if speech_frames >= confirmation_frames:
+                            self._audio.begin_recording()
+                            self._audio.accumulate(frame)
+                            self.state_machine.transition(State.RECORDING)
+                            self._ui_queue.put(StateUpdate(State.RECORDING, duration=0.0))
+                            speech_frames = 0
+                    else:
+                        # false trigger
+                        self.state_machine.transition(State.LISTENING)
+                        self._ui_queue.put(StateUpdate(State.LISTENING))
+                        self._vad.reset()
                         speech_frames = 0
 
                 elif state == State.RECORDING:
