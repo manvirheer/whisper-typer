@@ -42,7 +42,9 @@ class Config:
     # VAD
     vad_threshold: float = 0.5
     vad_confirmation_ms: int = 96         # ~3 frames at 32ms each
-    vad_silence_ms: int = 2000
+    vad_silence_ms: int = 1200            # initial silence timeout, adapts at runtime
+    vad_silence_min_ms: int = 800         # fastest adaptive timeout
+    vad_silence_max_ms: int = 2500        # slowest adaptive timeout
     pre_roll_ms: int = 500
 
     # menu bar

@@ -96,6 +96,7 @@ class WhisperVoiceTyping:
 
     def _processing_loop(self) -> None:
         from .menubar import StateUpdate, TranscriptionResult
+        from collections import deque
 
         silence_frames = 0
         speech_frames = 0
@@ -103,6 +104,10 @@ class WhisperVoiceTyping:
         confirmation_frames = self.config.vad_confirmation_ms // frame_ms
         silence_end_frames = self.config.vad_silence_ms // frame_ms
         last_duration_s = -1
+
+        # adaptive silence: track recent pause durations to tune timeout
+        recent_pauses: deque[float] = deque(maxlen=8)
+        last_speech_end: float | None = None
 
         while self.running:
             try:
@@ -132,11 +137,15 @@ class WhisperVoiceTyping:
                     if is_speech:
                         speech_frames += 1
                         if speech_frames == 1:
-                            # first speech frame - show "detected" immediately
                             self.state_machine.transition(State.DETECTED)
                             self._ui_queue.put(StateUpdate(State.DETECTED))
+                            # track pause since last speech ended
+                            if last_speech_end is not None:
+                                pause = time.time() - last_speech_end
+                                if pause < 10:  # ignore long gaps (user walked away)
+                                    recent_pauses.append(pause)
+                                    silence_end_frames = self._adapt_silence(recent_pauses, frame_ms)
                         if speech_frames >= confirmation_frames:
-                            # confirmed - start recording
                             self._audio.begin_recording()
                             self._audio.accumulate(frame)
                             self.state_machine.transition(State.RECORDING)
@@ -144,7 +153,6 @@ class WhisperVoiceTyping:
                             speech_frames = 0
                     else:
                         if speech_frames > 0:
-                            # false trigger - back to listening
                             self.state_machine.transition(State.LISTENING)
                             self._ui_queue.put(StateUpdate(State.LISTENING))
                         speech_frames = 0
@@ -159,7 +167,6 @@ class WhisperVoiceTyping:
                             self._ui_queue.put(StateUpdate(State.RECORDING, duration=0.0))
                             speech_frames = 0
                     else:
-                        # false trigger
                         self.state_machine.transition(State.LISTENING)
                         self._ui_queue.put(StateUpdate(State.LISTENING))
                         self._vad.reset()
@@ -180,6 +187,7 @@ class WhisperVoiceTyping:
                         self._ui_queue.put(StateUpdate(State.RECORDING, duration=duration))
 
                     if silence_frames >= silence_end_frames or duration >= self.config.max_recording_duration:
+                        last_speech_end = time.time()
                         self._do_transcribe()
                         silence_frames = speech_frames = 0
                         last_duration_s = -1
@@ -192,7 +200,7 @@ class WhisperVoiceTyping:
                     silence_frames = speech_frames = 0
                     last_duration_s = -1
 
-            except Exception as e:
+            except Exception as e:  # noqa: E722
                 log.exception(f"Processing error: {e}")
                 try:
                     self.state_machine.transition(State.ERROR)
@@ -254,6 +262,21 @@ class WhisperVoiceTyping:
                 self.running = False
                 self._audio.stop()
                 return
+
+    def _adapt_silence(self, recent_pauses, frame_ms: int) -> int:
+        """Adapt silence timeout based on recent pause patterns.
+
+        Short pauses between utterances → user is rapid-fire dictating → shorter timeout.
+        Long pauses → user is thinking between sentences → longer timeout.
+        """
+        if not recent_pauses:
+            return self.config.vad_silence_ms // frame_ms
+
+        avg_pause = sum(recent_pauses) / len(recent_pauses)
+        # target: 60% of average pause duration (responsive but not jumpy)
+        target_ms = int(avg_pause * 1000 * 0.6)
+        clamped = max(self.config.vad_silence_min_ms, min(self.config.vad_silence_max_ms, target_ms))
+        return clamped // frame_ms
 
     def _do_transcribe(self) -> None:
         from .menubar import StateUpdate, TranscriptionResult
