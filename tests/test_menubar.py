@@ -57,6 +57,6 @@ class TestTranscriptionHistory:
 
     def test_truncation_for_display(self):
         text = "a" * 100
-        display = text if len(text) <= 60 else text[:57] + "..."
-        assert len(display) == 60
+        display = text if len(text) <= 50 else text[:47] + "..."
+        assert len(display) == 50
         assert display.endswith("...")

@@ -1,21 +1,8 @@
-"""
-macOS menu bar via rumps.
-
-  STATE          | ICON  | TITLE  | KEY MENU ITEMS
-  IDLE           | ○     | (none) | Start Listening, Quit
-  LISTENING      | ○     | (none) | Listening..., Pause, Stop
-  DETECTED       | ●     | (none) | Speech detected, Transcribe Now
-  RECORDING      | ●     | "3s"   | Recording..., Transcribe Now
-  TRANSCRIBING   | ◐     | "..."  | Transcribing...
-  TYPING         | ●     | (none) | Typed!
-  PAUSED         | ○     | "||"   | Resume, Stop
-  ERROR          | ✗     | "!"    | Error: ..., Retry
-
-UI updates via rumps.Timer polling a queue.Queue every 100ms.
-"""
+"""macOS menu bar via rumps. UI updates via Timer polling a Queue every 100ms."""
 
 import queue, logging
 from collections import deque
+from datetime import datetime
 from .state import State
 
 log = logging.getLogger("whisper_voice_typing")
@@ -136,8 +123,9 @@ class WhisperMenuBar:
             self._pause_btn.set_callback(self._on_pause)
 
     def _add_transcription(self, text: str) -> None:
-        display = text if len(text) <= 60 else text[:57] + "..."
-        self._history.appendleft(display)
+        ts = datetime.now().strftime("%H:%M")
+        display = text if len(text) <= 50 else text[:47] + "..."
+        self._history.appendleft(f"[{ts}]  {display}")
         self._rebuild_history_menu()
 
     def _rebuild_history_menu(self) -> None:
@@ -148,11 +136,12 @@ class WhisperMenuBar:
         if not self._history:
             return
 
-        header = rumps.MenuItem("Recent:", callback=None)
-        header.set_callback(None)
-        self._history_items.append(header)
-        for text in self._history:
-            item = rumps.MenuItem(f"  {text}", callback=None)
+        sep = rumps.MenuItem("---  Recent Transcriptions  ---", callback=None)
+        sep.set_callback(None)
+        self._history_items.append(sep)
+        for entry in self._history:
+            item = rumps.MenuItem(entry, callback=None)
+            item.set_callback(None)
             self._history_items.append(item)
 
         insert_pos = "Quit"
