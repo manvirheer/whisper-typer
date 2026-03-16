@@ -60,3 +60,36 @@ class TestTranscriptionHistory:
         display = text if len(text) <= 50 else text[:47] + "..."
         assert len(display) == 50
         assert display.endswith("...")
+
+
+class TestListInputDevices:
+    def test_returns_list_when_sounddevice_unavailable(self):
+        from whisper_voice_typing.menubar import _list_input_devices
+        # Should return empty list gracefully if sounddevice not installed
+        result = _list_input_devices()
+        assert isinstance(result, list)
+
+    def test_returns_devices_with_expected_keys(self):
+        """If sounddevice is available, devices should have index/name/is_default."""
+        from whisper_voice_typing.menubar import _list_input_devices
+        from unittest.mock import patch, MagicMock
+
+        mock_devices = [
+            {'name': 'MacBook Pro Microphone', 'max_input_channels': 1, 'max_output_channels': 0},
+            {'name': 'External Headset', 'max_input_channels': 1, 'max_output_channels': 2},
+            {'name': 'Speakers', 'max_input_channels': 0, 'max_output_channels': 2},
+        ]
+        mock_sd = MagicMock()
+        mock_sd.query_devices.return_value = mock_devices
+        mock_sd.default.device = (0, 1)
+
+        with patch.dict('sys.modules', {'sounddevice': mock_sd}):
+            result = _list_input_devices()
+
+        assert len(result) == 2  # only input devices
+        assert result[0]['name'] == 'MacBook Pro Microphone'
+        assert result[0]['is_default'] is True
+        assert result[1]['name'] == 'External Headset'
+        assert result[1]['is_default'] is False
+
+

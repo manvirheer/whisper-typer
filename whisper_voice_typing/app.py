@@ -1,5 +1,5 @@
 """
-whisper-typer: 3-thread macOS pipeline or legacy Linux loop.
+whisper-typer: 3-thread macOS pipeline.
 
   CAPTURE THREAD         PROCESSING THREAD          MAIN THREAD
   sounddevice callback   VAD + transcribe + type    rumps menu bar
@@ -12,7 +12,7 @@ from pathlib import Path
 from .config import Config
 from .server import WhisperServer
 from .state import State, StateMachine
-from .utils import log, tlog, setup_gpu_environment, is_macos
+from .utils import log, tlog, setup_gpu_environment
 
 
 class WhisperVoiceTyping:
@@ -41,20 +41,13 @@ class WhisperVoiceTyping:
         self.pid_file.write_text(str(os.getpid()))
 
     def run(self) -> None:
-        if is_macos() and self._can_use_new_pipeline():
-            self._run_macos()
-        else:
-            self._run_legacy()
-
-    def _can_use_new_pipeline(self) -> bool:
         try:
             import sounddevice, rumps  # noqa: F401
-            return True
         except ImportError:
-            tlog.warn("Menu bar deps missing, using legacy mode. Install: pip install whisper-typer[macos]")
-            return False
-
-    # --- macOS pipeline ---
+            tlog.error("Dependencies missing. Run: ./setup.sh")
+            tlog.footer()
+            sys.exit(1)
+        self._run_macos()
 
     def _run_macos(self) -> None:
         from .audio import AudioPipeline
@@ -62,7 +55,7 @@ class WhisperVoiceTyping:
         from .menubar import WhisperMenuBar, StateUpdate
         from .typer import type_text
 
-        self.config.validate(tlog, use_new_pipeline=True)
+        self.config.validate(tlog)
         self._check_single_instance()
         signal.signal(signal.SIGINT, lambda *_: self._command_queue.put("quit"))
         signal.signal(signal.SIGTERM, lambda *_: self._command_queue.put("quit"))
@@ -258,6 +251,22 @@ class WhisperVoiceTyping:
                     tlog.info("Force transcribe")
                     self._do_transcribe()
 
+            elif isinstance(cmd, tuple) and cmd[0] == "change_mic":
+                new_mic = cmd[1]
+                self.config.headphone_mic = new_mic or ""
+                tlog.info(f"Switching mic to: {new_mic or 'system default'}")
+                was_active = self._audio.is_active()
+                if was_active:
+                    self._audio.stop()
+                    try:
+                        self._audio.start()
+                        tlog.info("Audio stream restarted with new mic")
+                    except Exception as e:
+                        log.error(f"Failed to start with new mic: {e}")
+                        try: self.state_machine.transition(State.ERROR)
+                        except ValueError: pass
+                        self._ui_queue.put(StateUpdate(State.ERROR, detail=f"Mic error: {e}"))
+
             elif cmd == "quit":
                 self.running = False
                 self._audio.stop()
@@ -315,65 +324,3 @@ class WhisperVoiceTyping:
             except ValueError: pass
             self._vad.reset()
 
-    # --- Legacy pipeline (Linux / fallback) ---
-
-    def _run_legacy(self) -> None:
-        from .audio import LegacyAudioProcessor
-
-        self.config.validate(tlog, use_new_pipeline=False)
-        self._check_single_instance()
-        signal.signal(signal.SIGINT, self._cleanup_legacy)
-        signal.signal(signal.SIGTERM, self._cleanup_legacy)
-        setup_gpu_environment(self.config)
-
-        processor = LegacyAudioProcessor(self.config, self.server)
-        processor.setup_temp_dir()
-        if not self.server.is_running(): self.server.start()
-
-        tlog.info("whisper-typer activated (legacy mode)")
-        tlog.info(f"Threads: {self.config.thread_count}")
-        if self.config.headphone_mic and self.config.headphone_mic != "default":
-            tlog.info(f"Mic: {self.config.headphone_mic}")
-        tlog.info("Listening... (Ctrl+C to exit)")
-
-        self.running = True
-        errors = 0
-        while self.running:
-            try:
-                tlog.status("Listening...")
-                audio_file = processor.record_audio()
-                if audio_file:
-                    tlog.status("Processing...")
-                    if processor.process_audio(audio_file):
-                        errors = 0
-                        tlog.status("Done, waiting...")
-                        time.sleep(self.config.post_processing_delay)
-                    audio_file.unlink(missing_ok=True)
-                else:
-                    time.sleep(self.config.no_audio_delay)
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                errors += 1
-                log.exception(f"Main loop error: {e}")
-                if errors >= 10:
-                    tlog.error("Too many errors, restarting server...")
-                    self.server.stop()
-                    time.sleep(2)
-                    self.server.start()
-                    errors = 0
-                else:
-                    time.sleep(1)
-
-        self._cleanup_legacy()
-        processor.cleanup_temp_dir()
-
-    def _cleanup_legacy(self, signum=None, frame=None) -> None:
-        if not self.running: return
-        self.running = False
-        print()
-        tlog.info("Exiting whisper-typer")
-        tlog.footer()
-        self.server.stop()
-        self.pid_file.unlink(missing_ok=True)
-        time.sleep(0.2)

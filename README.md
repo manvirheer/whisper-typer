@@ -1,30 +1,26 @@
 # whisper-typer
 
-local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine - no API calls, no cloud, no latency.
+local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine — no API calls, no cloud, no latency.
 
-on apple silicon it hits Metal + CoreML + Neural Engine for fast inference. linux gets vulkan/cuda.
+uses Metal + CoreML + Neural Engine on Apple Silicon for fast inference.
 
-## setup (macOS)
+## requirements
+
+- macOS with Apple Silicon (M1/M2/M3/M4)
+- Xcode Command Line Tools (`xcode-select --install`)
+- cmake (`brew install cmake`)
+
+## setup
 
 ```bash
-brew install sox ffmpeg
-pip install -e .
+git clone https://github.com/manvirheer/whisper-typer.git
+cd whisper-typer
 ./setup.sh
 ```
+
+setup.sh handles everything: virtual environment, Python dependencies, building whisper.cpp, model download, and VAD setup.
 
 grant accessibility when prompted: System Settings > Privacy & Security > Accessibility.
-
-## setup (linux)
-
-```bash
-# fedora
-sudo dnf install sox xdotool curl jq
-# ubuntu
-sudo apt install sox xdotool curl jq
-
-pip install -e .
-./setup.sh
-```
 
 ## usage
 
@@ -38,14 +34,11 @@ that's it. talk and it types. silence detection handles start/stop automatically
 ────────────────────────────────────────────────────────────────────────────────
 TIME       │ LEVEL    │ MESSAGE
 ────────────────────────────────────────────────────────────────────────────────
-14:23:01   │ INFO     │ whisper-typer activated
+14:23:01   │ INFO     │ whisper-typer activated (menu bar mode)
 14:23:01   │ INFO     │ Threads: 8
-14:23:01   │ INFO     │ Listening... (Ctrl+C to exit)
-14:23:05   │ STATUS   │ Listening...
+14:23:05   │ INFO     │ Listening...
 14:23:09   │ INFO     │ Recorded 48320 bytes
-14:23:09   │ STATUS   │ Processing...
 14:23:10   │ SUCCESS  │ Transcribed in 823ms via server
-14:23:10   │ STATUS   │ Done, waiting...
 ────────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -65,4 +58,11 @@ env vars, all optional:
 
 ```bash
 WHISPER_MIC="MacBook Pro Microphone" wv
+```
+
+## install as launch agent
+
+```bash
+wv install    # start on login
+wv uninstall  # remove
 ```

@@ -1,10 +1,8 @@
-import os, sys, platform, logging
+import os, sys, logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
 
-
-def is_macos() -> bool: return platform.system() == "Darwin"
 
 
 def _setup_logging() -> logging.Logger:

@@ -67,9 +67,9 @@ class TestValidation:
 
         import pytest
         with pytest.raises(SystemExit):
-            config.validate(tlog, use_new_pipeline=False)
+            config.validate(tlog)
 
-    def test_validation_checks_sounddevice_for_new_pipeline(self, tmp_path, monkeypatch):
+    def test_validation_checks_sounddevice(self, tmp_path, monkeypatch):
         config = Config()
         # make binaries "exist"
         for f in [config.whisper_executable, config.server_binary, config.whisper_model]:
@@ -89,4 +89,4 @@ class TestValidation:
         monkeypatch.setattr(builtins, "__import__", fail_sd)
         import pytest
         with pytest.raises(SystemExit):
-            config.validate(tlog, use_new_pipeline=True)
+            config.validate(tlog)

@@ -2,13 +2,9 @@ import sys, argparse, plistlib, shutil
 from pathlib import Path
 from .app import WhisperVoiceTyping
 from .config import Config
-from .utils import is_macos
 
 
 def _install_launchagent() -> None:
-    if not is_macos():
-        print("LaunchAgent is macOS-only"); sys.exit(1)
-
     config = Config()
     config.launchagent_dir.mkdir(parents=True, exist_ok=True)
     config.log_dir.mkdir(parents=True, exist_ok=True)
@@ -35,9 +31,6 @@ def _install_launchagent() -> None:
 
 
 def _uninstall_launchagent() -> None:
-    if not is_macos():
-        print("LaunchAgent is macOS-only"); sys.exit(1)
-
     config = Config()
     if config.launchagent_plist.exists():
         import subprocess
@@ -51,7 +44,6 @@ def _uninstall_launchagent() -> None:
 def main():
     parser = argparse.ArgumentParser(prog="wv", description="whisper-typer: local voice-to-text")
     parser.add_argument("command", nargs="?", choices=["install", "uninstall"])
-    parser.add_argument("--legacy", action="store_true", help="force legacy mode (no menu bar)")
     args = parser.parse_args()
 
     if args.command == "install":
@@ -60,7 +52,7 @@ def main():
         _uninstall_launchagent()
     else:
         app = WhisperVoiceTyping()
-        app._run_legacy() if args.legacy else app.run()
+        app.run()
 
 
 if __name__ == "__main__":

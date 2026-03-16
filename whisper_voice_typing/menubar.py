@@ -13,6 +13,25 @@ try:
 except ImportError:
     _HAS_RUMPS = False
 
+
+def _list_input_devices() -> list[dict]:
+    """Return list of available input audio devices."""
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        default_input = sd.default.device[0]
+        result = []
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0:
+                result.append({
+                    'index': i,
+                    'name': d['name'],
+                    'is_default': i == default_input,
+                })
+        return result
+    except Exception:
+        return []
+
 _ICONS = {
     State.IDLE: "\u25cb", State.LISTENING: "\u25cb",
     State.DETECTED: "\u25cf", State.RECORDING: "\u25cf",
@@ -52,6 +71,7 @@ class WhisperMenuBar:
         self._ui_queue, self._command_queue = ui_queue, command_queue
         self._current_state = State.IDLE
         self._history: deque[str] = deque(maxlen=config.transcription_history_size)
+        self._active_mic: str | None = config.headphone_mic if config.headphone_mic else None
 
         self._app = rumps.App("whisper-typer", title=_ICONS[State.IDLE], quit_button=None)
         self._build_menu()
@@ -63,16 +83,19 @@ class WhisperMenuBar:
         self._transcribe_btn = rumps.MenuItem("Transcribe Now", callback=self._on_transcribe)
         self._toggle_btn = rumps.MenuItem("Start Listening", callback=self._on_toggle)
         self._pause_btn = rumps.MenuItem("Pause", callback=self._on_pause)
+        self._mic_menu = rumps.MenuItem("Microphone")
         self._quit_btn = rumps.MenuItem("Quit", callback=self._on_quit)
 
         self._app.menu = [
             self._status_item, None,
             self._transcribe_btn, self._toggle_btn, self._pause_btn,
+            None, self._mic_menu,
             None, self._quit_btn,
         ]
         self._transcribe_btn.set_callback(None)
         self._pause_btn.set_callback(None)
         self._history_items: list[rumps.MenuItem] = []
+        self._refresh_mic_menu()
 
     def _poll_queue(self, _sender) -> None:
         while True:
@@ -174,6 +197,46 @@ class WhisperMenuBar:
         self._app.menu.insert_before("Quit", None)
         for item in items:
             self._app.menu.insert_before("Quit", item)
+
+    def _refresh_mic_menu(self) -> None:
+        """Populate the Microphone submenu with available input devices."""
+        # Clear existing items
+        for key in list(self._mic_menu.keys()):
+            del self._mic_menu[key]
+
+        devices = _list_input_devices()
+        if not devices:
+            no_devices = rumps.MenuItem("No input devices found", callback=None)
+            no_devices.set_callback(None)
+            self._mic_menu[no_devices.title] = no_devices
+            return
+
+        # Determine which device is currently active
+        active = self._active_mic
+
+        for dev in devices:
+            name = dev['name']
+            label = f"{'Default: ' if dev['is_default'] else ''}{name}"
+            item = rumps.MenuItem(label, callback=lambda _, d=dev: self._on_mic_select(d))
+
+            # Check if this is the active mic
+            if active and active == name:
+                item.state = 1  # checkmark
+            elif not active and dev['is_default']:
+                item.state = 1  # using system default
+            self._mic_menu[item.title] = item
+
+    def _on_mic_select(self, device: dict) -> None:
+        """Handle mic selection from the menu."""
+        name = device['name']
+        # If selecting the default device, clear the override
+        if device['is_default']:
+            self._active_mic = None
+            self._command_queue.put(("change_mic", None))
+        else:
+            self._active_mic = name
+            self._command_queue.put(("change_mic", name))
+        self._refresh_mic_menu()
 
     def _on_transcribe(self, _): self._command_queue.put("force_transcribe")
     def _on_toggle(self, _):

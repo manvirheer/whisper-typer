@@ -10,22 +10,6 @@ from whisper_voice_typing.app import WhisperVoiceTyping
 from whisper_voice_typing.state import State
 
 
-class TestCanUseNewPipeline:
-    def test_returns_true_when_deps_available(self):
-        app = WhisperVoiceTyping.__new__(WhisperVoiceTyping)
-        assert app._can_use_new_pipeline() is True
-
-    def test_returns_false_when_deps_missing(self, monkeypatch):
-        import builtins
-        original = builtins.__import__
-        def fail(name, *a, **kw):
-            if name in ("sounddevice", "rumps"): raise ImportError
-            return original(name, *a, **kw)
-        monkeypatch.setattr(builtins, "__import__", fail)
-        app = WhisperVoiceTyping.__new__(WhisperVoiceTyping)
-        assert app._can_use_new_pipeline() is False
-
-
 class TestProcessCommands:
     def setup_method(self):
         self.app = WhisperVoiceTyping.__new__(WhisperVoiceTyping)

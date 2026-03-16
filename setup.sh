@@ -1,11 +1,70 @@
 #!/bin/bash
 set -e
 
+# ── Preflight checks ────────────────────────────────────────────────────────
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: whisper-typer requires macOS."
+    exit 1
+fi
+
+if [[ "$(uname -m)" != "arm64" ]]; then
+    echo "Error: whisper-typer requires Apple Silicon (M-series chip)."
+    exit 1
+fi
+
+command -v git >/dev/null 2>&1 || {
+    echo "Error: git not found. Install: xcode-select --install"
+    exit 1
+}
+
+xcode-select -p >/dev/null 2>&1 || {
+    echo "Error: Xcode Command Line Tools required. Install: xcode-select --install"
+    exit 1
+}
+
+command -v cmake >/dev/null 2>&1 || {
+    echo "Error: cmake not found. Install: brew install cmake (or https://cmake.org)"
+    exit 1
+}
+
+command -v python3 >/dev/null 2>&1 || {
+    echo "Error: python3 not found."
+    exit 1
+}
+
+echo "Preflight checks passed."
+echo ""
+
+# ── Virtual environment ──────────────────────────────────────────────────────
+
+CREATED_VENV=false
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo "Warning: not running in a virtual environment."
+    read -p "Create .venv in project directory? [Y/n] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        python3 -m venv .venv
+        source .venv/bin/activate
+        CREATED_VENV=true
+        echo "Created and activated .venv"
+    else
+        echo "Proceeding without venv."
+    fi
+    echo ""
+fi
+
+# ── Install Python dependencies ──────────────────────────────────────────────
+
+echo "Installing whisper-typer and macOS dependencies..."
+python3 -m pip install -e ".[macos]"
+echo ""
+
+# ── Build whisper.cpp ────────────────────────────────────────────────────────
+
 WHISPER_DIR="${WHISPER_CPP_DIR:-$HOME/.local/share/whisper.cpp}"
-MODEL="${WHISPER_MODEL_NAME:-large-v3-turbo}"
 
 echo "whisper.cpp -> $WHISPER_DIR"
-echo "model -> $MODEL"
 
 if [ ! -d "$WHISPER_DIR" ]; then
     git clone https://github.com/ggerganov/whisper.cpp.git "$WHISPER_DIR"
@@ -13,47 +72,93 @@ fi
 
 cd "$WHISPER_DIR"
 
-if [[ "$(uname)" == "Darwin" ]]; then
-    echo "building with metal + coreml + flash attention..."
-    cmake -B build \
-        -DGGML_METAL=ON \
-        -DGGML_METAL_EMBED_LIBRARY=ON \
-        -DWHISPER_COREML=ON \
-        -DGGML_FLASH_ATTN=ON
-    cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+echo "Building with Metal + CoreML + Flash Attention..."
+cmake -B build \
+    -DGGML_METAL=ON \
+    -DGGML_METAL_EMBED_LIBRARY=ON \
+    -DWHISPER_COREML=ON \
+    -DGGML_FLASH_ATTN=ON
+cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+echo ""
+
+# ── Model picker ─────────────────────────────────────────────────────────────
+
+CHIP=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "Apple Silicon")
+RAM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
+RAM_GB=$((RAM_BYTES / 1073741824))
+
+# Recommendation based on RAM
+if [ "$RAM_GB" -ge 24 ]; then
+    RECOMMENDED=5
+    REC_NAME="large-v3-turbo"
+elif [ "$RAM_GB" -ge 16 ]; then
+    RECOMMENDED=4
+    REC_NAME="medium"
 else
-    echo "building with flash attention..."
-    cmake -B build -DGGML_FLASH_ATTN=ON
-    cmake --build build --config Release -j$(nproc)
+    RECOMMENDED=3
+    REC_NAME="small"
 fi
 
+echo "Detected: $CHIP (${RAM_GB}GB RAM)"
+echo ""
+echo "Models:"
+echo "  1) tiny            75MB   — fastest, lower accuracy"
+echo "  2) base           142MB   — fast, decent accuracy"
+echo "  3) small          466MB   — good balance"
+echo "  4) medium         1.5GB   — high accuracy"
+echo "  5) large-v3-turbo 1.5GB   — best accuracy"
+echo ""
+echo "  ★ Recommended for your device: $REC_NAME"
+echo ""
+read -p "Pick [1-5] (default: $RECOMMENDED): " MODEL_CHOICE
+
+case "${MODEL_CHOICE:-$RECOMMENDED}" in
+    1) MODEL="tiny" ;;
+    2) MODEL="base" ;;
+    3) MODEL="small" ;;
+    4) MODEL="medium" ;;
+    5) MODEL="large-v3-turbo" ;;
+    *) echo "Invalid choice, using $REC_NAME"; MODEL="$REC_NAME" ;;
+esac
+
 if [ ! -f "models/ggml-${MODEL}.bin" ]; then
-    echo "downloading $MODEL..."
+    echo ""
+    echo "Downloading $MODEL model..."
     ./models/download-ggml-model.sh "$MODEL"
 fi
 
-# coreml converts the encoder to run on apple's neural engine
-# takes 10-60 min first time, but inference is faster after
-if [[ "$(uname)" == "Darwin" ]] && [ ! -d "models/ggml-${MODEL}-encoder.mlmodelc" ]; then
+# ── CoreML encoder (optional) ───────────────────────────────────────────────
+
+if [ ! -d "models/ggml-${MODEL}-encoder.mlmodelc" ]; then
     echo ""
-    read -p "generate coreml model for neural engine? [Y/n] " -n 1 -r
+    echo "CoreML Neural Engine encoder speeds up inference ~2x."
+    echo "Generating it takes 10-60 minutes (one-time cost)."
+    read -p "Generate CoreML model? [Y/n] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        pip3 install ane_transformers openai-whisper coremltools 'numpy<2' 2>/dev/null || \
-        pip3 install --break-system-packages ane_transformers openai-whisper coremltools 'numpy<2'
+        python3 -m pip install ane_transformers openai-whisper coremltools 'numpy<2'
         ./models/generate-coreml-model.sh "$MODEL"
     fi
 fi
 
-# install macOS dependencies (menu bar, VAD, audio capture)
-if [[ "$(uname)" == "Darwin" ]]; then
-    echo ""
-    echo "installing macOS dependencies (sounddevice, silero-vad, rumps, pyobjc)..."
-    cd -
-    pip install -e ".[macos]" 2>/dev/null || pip install --break-system-packages -e ".[macos]"
-    echo "downloading silero VAD model..."
-    python3 -c "from silero_vad import load_silero_vad; load_silero_vad(onnx=True)" 2>/dev/null || true
-fi
+# ── Download Silero VAD model ────────────────────────────────────────────────
 
 echo ""
-echo "done. run: wv"
+echo "Downloading Silero VAD model..."
+python3 -c "from silero_vad import load_silero_vad; load_silero_vad(onnx=True)" 2>/dev/null || true
+
+# ── Done ─────────────────────────────────────────────────────────────────────
+
+cd - >/dev/null
+
+echo ""
+echo "════════════════════════════════════════"
+echo "  Setup complete!"
+echo ""
+echo "  Model:  $MODEL (ggml-${MODEL}.bin)"
+if [ "$CREATED_VENV" = true ]; then
+    echo "  Venv:   .venv (activate with: source .venv/bin/activate)"
+fi
+echo ""
+echo "  Run:    wv"
+echo "════════════════════════════════════════"

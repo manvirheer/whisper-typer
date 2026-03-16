@@ -1,34 +1,33 @@
-"""Text insertion: NSPasteboard + CGEvent (macOS) or xdotool (Linux)."""
+"""Text insertion: NSPasteboard + CGEvent (native) or pbcopy+osascript (fallback)."""
 
 import time, subprocess, logging
-from .utils import is_macos
 
 log = logging.getLogger("whisper_voice_typing")
 
 _HAS_PYOBJC = False
-if is_macos():
-    try:
-        from AppKit import NSPasteboard, NSPasteboardTypeString
-        from Quartz import (
-            CGEventCreateKeyboardEvent, CGEventSetFlags,
-            CGEventPost, kCGHIDEventTap, kCGEventFlagMaskCommand,
-        )
-        _HAS_PYOBJC = True
-    except ImportError:
-        log.warning("PyObjC not available, using subprocess fallback")
+NSPasteboard = NSPasteboardTypeString = None
+CGEventCreateKeyboardEvent = CGEventSetFlags = CGEventPost = None
+kCGHIDEventTap = kCGEventFlagMaskCommand = None
+try:
+    from AppKit import NSPasteboard, NSPasteboardTypeString
+    from Quartz import (
+        CGEventCreateKeyboardEvent, CGEventSetFlags,
+        CGEventPost, kCGHIDEventTap, kCGEventFlagMaskCommand,
+    )
+    _HAS_PYOBJC = True
+except ImportError:
+    log.warning("PyObjC not available, using subprocess fallback")
 
 
 def type_text(text: str) -> bool:
     try:
-        if is_macos():
-            return _type_macos_native(text) if _HAS_PYOBJC else _type_macos_subprocess(text)
-        return _type_linux(text)
+        return _type_native(text) if _HAS_PYOBJC else _type_subprocess(text)
     except Exception as e:
         log.exception(f"Failed to type: {e}")
         return False
 
 
-def _type_macos_native(text: str) -> bool:
+def _type_native(text: str) -> bool:
     pb = NSPasteboard.generalPasteboard()
     old_contents = pb.stringForType_(NSPasteboardTypeString)
 
@@ -48,7 +47,6 @@ def _type_macos_native(text: str) -> bool:
 
 def _send_cmd_v() -> bool:
     try:
-        # key code 9 = 'v'
         key_down = CGEventCreateKeyboardEvent(None, 9, True)
         key_up = CGEventCreateKeyboardEvent(None, 9, False)
         if key_down is None or key_up is None:
@@ -64,7 +62,7 @@ def _send_cmd_v() -> bool:
         return False
 
 
-def _type_macos_subprocess(text: str) -> bool:
+def _type_subprocess(text: str) -> bool:
     saved = None
     try:
         r = subprocess.run(["pbpaste"], capture_output=True, timeout=2)
@@ -89,9 +87,4 @@ def _type_macos_subprocess(text: str) -> bool:
         else:
             log.error(f"osascript failed: {stderr}")
         return False
-    return True
-
-
-def _type_linux(text: str) -> bool:
-    subprocess.run(["xdotool", "type", "--delay", "1", "--clearmodifiers", "--", text], check=True, timeout=10)
     return True
