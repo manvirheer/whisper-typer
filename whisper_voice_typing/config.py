@@ -19,24 +19,45 @@ class Config:
     whisper_model: Path = field(init=False)
     server_binary: Path = field(init=False)
 
+    # audio format
     sample_rate: int = 16000
     channels: int = 1
     bit_depth: int = 16
 
+    # whisper server
     server_host: str = "127.0.0.1"
     server_port: int = 8080
     server_pid_file: Path = Path("/tmp/whisper_server.pid")
 
-    silence_start_duration: float = 0.05   # fast trigger to avoid clipping speech onset
+    # sox silence detection (linux / legacy macos path)
+    silence_start_duration: float = 0.05
     silence_start_threshold: str = "1.5%"
     silence_end_duration: float = 2.0
-    silence_end_threshold: str = "1%"      # low so quiet trailing words aren't cut
+    silence_end_threshold: str = "1%"
+
+    # recording limits
     max_recording_duration: int = 30
     min_file_size: int = 8192              # ~0.25s of audio
 
+    # VAD settings (macOS new pipeline)
+    vad_threshold: float = 0.5            # silero confidence threshold
+    vad_confirmation_ms: int = 300        # ms of sustained speech to confirm detection
+    vad_silence_ms: int = 2000            # ms of silence to end recording
+    pre_roll_ms: int = 500                # ms of audio to keep before VAD trigger
+
+    # menu bar
+    menu_update_interval: float = 0.1     # seconds between UI poll cycles
+    transcription_history_size: int = 5
+
+    # general
     thread_count: int = field(default_factory=lambda: min(os.cpu_count() or 4, 8))
     post_processing_delay: float = 1.0
     no_audio_delay: float = 0.1
+
+    # LaunchAgent
+    launchagent_label: str = "com.whisper-typer"
+    launchagent_dir: Path = field(default_factory=lambda: Path.home() / "Library/LaunchAgents")
+    log_dir: Path = field(default_factory=lambda: Path.home() / ".local/share/whisper-typer/logs")
 
     def __post_init__(self):
         self.whisper_executable = self.whisper_dir / "build/bin/whisper-cli"
@@ -44,15 +65,27 @@ class Config:
         self.whisper_model = Path(model_env) if model_env else self.whisper_dir / "models/ggml-large-v3-turbo.bin"
         self.server_binary = self.whisper_dir / "build/bin/whisper-server"
 
-    def validate(self, tlog) -> None:
+    @property
+    def launchagent_plist(self) -> Path:
+        return self.launchagent_dir / f"{self.launchagent_label}.plist"
+
+    def validate(self, tlog, use_new_pipeline: bool = True) -> None:
         errors = []
         if not self.whisper_executable.exists(): errors.append(f"whisper-cli not found: {self.whisper_executable}")
         if not self.server_binary.exists(): errors.append(f"whisper-server not found: {self.server_binary}")
         if not self.whisper_model.exists(): errors.append(f"model not found: {self.whisper_model}")
 
-        required = ['rec', 'ffmpeg', 'osascript'] if is_macos() else ['rec', 'xdotool']
-        for cmd in required:
-            if not shutil.which(cmd): errors.append(f"command not found: {cmd}")
+        if use_new_pipeline and is_macos():
+            # new pipeline: sounddevice + silero + rumps (no sox/ffmpeg needed for capture)
+            try:
+                import sounddevice  # noqa: F401
+            except ImportError:
+                errors.append("sounddevice not installed: pip install whisper-typer[macos]")
+        else:
+            # legacy pipeline: sox + ffmpeg/xdotool
+            required = ['rec', 'ffmpeg', 'osascript'] if is_macos() else ['rec', 'xdotool']
+            for cmd in required:
+                if not shutil.which(cmd): errors.append(f"command not found: {cmd}")
 
         if errors:
             for e in errors: tlog.error(e)

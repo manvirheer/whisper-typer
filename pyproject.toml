@@ -1,11 +1,26 @@
 [project]
 name = "whisper-typer"
-version = "0.1.0"
+version = "0.2.0"
 description = "local voice-to-text that types wherever your cursor is"
 requires-python = ">=3.10"
 dependencies = ["requests>=2.31.0"]
 license = "MIT"
 authors = [{ name = "Manvir" }]
+
+[project.optional-dependencies]
+macos = [
+    "sounddevice>=0.4.6",
+    "silero-vad>=5.1",
+    "onnxruntime>=1.17.0",
+    "rumps>=0.4.0",
+    "pyobjc-framework-Cocoa>=10.0",
+    "pyobjc-framework-Quartz>=10.0",
+    "numpy>=1.24.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-timeout>=2.2.0",
+]
 
 [project.urls]
 Repository = "https://github.com/manvirheer/whisper-typer"

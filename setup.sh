@@ -45,5 +45,15 @@ if [[ "$(uname)" == "Darwin" ]] && [ ! -d "models/ggml-${MODEL}-encoder.mlmodelc
     fi
 fi
 
+# install macOS dependencies (menu bar, VAD, audio capture)
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo ""
+    echo "installing macOS dependencies (sounddevice, silero-vad, rumps, pyobjc)..."
+    cd -
+    pip install -e ".[macos]" 2>/dev/null || pip install --break-system-packages -e ".[macos]"
+    echo "downloading silero VAD model..."
+    python3 -c "from silero_vad import load_silero_vad; load_silero_vad(onnx=True)" 2>/dev/null || true
+fi
+
 echo ""
 echo "done. run: wv"
