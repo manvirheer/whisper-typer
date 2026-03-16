@@ -1,42 +1,24 @@
 """
-Audio capture pipeline using sounddevice + frame queue.
+Audio capture: sounddevice + ring buffer + frame queue.
 
-Data flow:
+  sounddevice callback --> ring buffer (30.5s, for pre-roll)
+                       +-> frame queue (for VAD, each frame exactly once)
 
-  sounddevice callback         frame_queue           processing thread
-  (audio thread)           (thread-safe Queue)       (consumer)
-  +------------------+     +------------------+     +------------------+
-  | writes 100ms     |---->| frames enqueue   |---->| dequeue frame    |
-  | chunks to ring   |     | for VAD          |     | run VAD          |
-  | buffer + queue   |     +------------------+     | accumulate if    |
-  +------------------+                               | recording       |
-         |                                           +------------------+
-         v
-  ring buffer (circular, keeps last 30.5s for pre-roll):
-
-  [...old frames...][500ms pre-roll][VAD FIRES HERE][...speech continues...]
-                     ^                ^
-                     save starts      detection point
-                     here
-
-The ring buffer is used ONLY for pre-roll capture (grabbing audio from
-before VAD triggered). The frame queue is used for real-time VAD processing
-to ensure every frame is processed exactly once.
+  Ring buffer pre-roll on VAD trigger:
+  [...old audio...][500ms pre-roll][VAD HERE][...speech...]
+                    ^               ^
+                    save starts     detection
 """
 
-import queue
-import time, tempfile, shutil, struct, wave, subprocess, threading
+import queue, time, tempfile, shutil, wave, subprocess, threading
 from pathlib import Path
-
 from .utils import log, tlog, is_macos
 
 
 class RingBuffer:
-    """Thread-safe circular buffer for raw PCM audio frames."""
+    """Thread-safe circular buffer for raw PCM audio."""
 
     def __init__(self, capacity_seconds: float, sample_rate: int = 16000, bytes_per_sample: int = 2):
-        self._sample_rate = sample_rate
-        self._bytes_per_sample = bytes_per_sample
         self._capacity = int(capacity_seconds * sample_rate * bytes_per_sample)
         self._buffer = bytearray(self._capacity)
         self._write_pos = 0
@@ -48,16 +30,13 @@ class RingBuffer:
         return self._capacity
 
     def write(self, data: bytes) -> None:
-        """Write audio data into the ring buffer. Overwrites oldest data on overflow."""
         n = len(data)
         with self._lock:
             if n >= self._capacity:
-                # data larger than buffer, keep only the last capacity bytes
                 self._buffer[:] = data[-self._capacity:]
                 self._write_pos = 0
                 self._total_written += n
                 return
-
             end = self._write_pos + n
             if end <= self._capacity:
                 self._buffer[self._write_pos:end] = data
@@ -69,20 +48,16 @@ class RingBuffer:
             self._total_written += n
 
     def read_last(self, num_bytes: int) -> bytes:
-        """Read the last num_bytes from the buffer."""
         with self._lock:
             available = min(num_bytes, self._total_written, self._capacity)
             if available == 0:
                 return b""
-
             start = (self._write_pos - available) % self._capacity
             if start < self._write_pos:
                 return bytes(self._buffer[start:self._write_pos])
-            else:
-                return bytes(self._buffer[start:]) + bytes(self._buffer[:self._write_pos])
+            return bytes(self._buffer[start:]) + bytes(self._buffer[:self._write_pos])
 
     def read_all(self) -> bytes:
-        """Read all available data from the buffer."""
         return self.read_last(self._capacity)
 
     def clear(self) -> None:
@@ -92,8 +67,6 @@ class RingBuffer:
 
 
 class AudioPipeline:
-    """Capture audio via sounddevice, feed into ring buffer + frame queue."""
-
     def __init__(self, config):
         self.config = config
         self._stream = None
@@ -116,82 +89,53 @@ class AudioPipeline:
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def start(self) -> None:
-        """Start the audio capture stream."""
         import sounddevice as sd
-
         device = None
         if self.config.headphone_mic and self.config.headphone_mic != "default":
             device = self.config.headphone_mic
-
         self._stream = sd.RawInputStream(
-            samplerate=self.config.sample_rate,
-            channels=self.config.channels,
-            dtype="int16",
-            blocksize=int(self.config.sample_rate * 0.1),  # 100ms blocks
-            device=device,
-            callback=self._audio_callback,
+            samplerate=self.config.sample_rate, channels=self.config.channels,
+            dtype="int16", blocksize=int(self.config.sample_rate * 0.1),
+            device=device, callback=self._audio_callback,
         )
         self._stream.start()
 
     def stop(self) -> None:
-        """Stop the audio capture stream."""
         if self._stream is not None:
-            try:
-                self._stream.stop()
-                self._stream.close()
-            except Exception:
-                pass
+            try: self._stream.stop(); self._stream.close()
+            except Exception: pass
             self._stream = None
 
     def is_active(self) -> bool:
         return self._stream is not None and self._stream.active
 
     def _audio_callback(self, indata, frames, time_info, status):
-        """sounddevice callback - runs on audio thread. Must be fast."""
         if status:
-            log.warning(f"Audio callback status: {status}")
+            log.warning(f"Audio status: {status}")
         data = bytes(indata)
         self._ring_buffer.write(data)
-        try:
-            self._frame_queue.put_nowait(data)
-        except queue.Full:
-            pass  # drop frame if consumer is too slow
+        try: self._frame_queue.put_nowait(data)
+        except queue.Full: pass
 
     def next_frame(self, timeout: float = 0.2) -> bytes | None:
-        """Get the next unprocessed 100ms frame. Blocks until available.
-
-        Returns None on timeout (no new audio data).
-        Each frame is returned exactly once -- no duplicates, no skips.
-        """
-        try:
-            return self._frame_queue.get(timeout=timeout)
-        except queue.Empty:
-            return None
+        try: return self._frame_queue.get(timeout=timeout)
+        except queue.Empty: return None
 
     def begin_recording(self) -> None:
-        """Mark the start of a speech segment. Captures pre-roll from ring buffer."""
         self._recording_start = time.time()
-        # grab pre-roll audio from before VAD triggered
-        pre_roll = self._ring_buffer.read_last(self._pre_roll_bytes)
-        self._speech_buffer = bytearray(pre_roll)
+        self._speech_buffer = bytearray(self._ring_buffer.read_last(self._pre_roll_bytes))
 
     def accumulate(self, frame: bytes) -> None:
-        """Accumulate an already-dequeued frame into the speech buffer."""
         self._speech_buffer.extend(frame)
 
     def recording_duration(self) -> float:
-        """Seconds since recording began."""
-        if self._recording_start is None:
-            return 0.0
-        return time.time() - self._recording_start
+        return time.time() - self._recording_start if self._recording_start else 0.0
 
     def save_recording(self) -> Path | None:
-        """Save accumulated speech buffer to a .wav file."""
         if not self._speech_buffer or not self.temp_dir:
             return None
-
         if len(self._speech_buffer) < self.config.min_file_size:
-            tlog.warn(f"Too small ({len(self._speech_buffer)}B < {self.config.min_file_size}B), discarding")
+            tlog.warn(f"Too small ({len(self._speech_buffer)}B), discarding")
             self._speech_buffer.clear()
             self._recording_start = None
             return None
@@ -203,7 +147,6 @@ class AudioPipeline:
                 wf.setsampwidth(self.config.bit_depth // 8)
                 wf.setframerate(self.config.sample_rate)
                 wf.writeframes(bytes(self._speech_buffer))
-
             tlog.info(f"Recorded {len(self._speech_buffer)} bytes ({self.recording_duration():.1f}s)")
         except OSError as e:
             log.error(f"Failed to save recording: {e}")
@@ -216,12 +159,10 @@ class AudioPipeline:
         return audio_file
 
     def discard_recording(self) -> None:
-        """Discard current speech buffer without saving."""
         self._speech_buffer.clear()
         self._recording_start = None
 
     def restart_stream(self) -> bool:
-        """Restart the audio stream after a device error."""
         tlog.info("Restarting audio stream...")
         self.stop()
         try:
@@ -229,15 +170,13 @@ class AudioPipeline:
             self.start()
             return True
         except Exception as e:
-            log.error(f"Failed to restart audio stream: {e}")
+            log.error(f"Failed to restart: {e}")
             return False
 
 
-# --- Legacy Linux audio path (unchanged from v1) ---
+# --- Legacy path (Linux / fallback) ---
 
 class LegacyAudioProcessor:
-    """Original ffmpeg+sox pipeline for Linux."""
-
     def __init__(self, config, server):
         self.config, self.server = config, server
         self.temp_dir: Path | None = None
@@ -263,9 +202,7 @@ class LegacyAudioProcessor:
         self._cleanup_stale()
         audio_file = self.temp_dir / f"{time.time_ns()}.wav"
         timeout = self.config.max_recording_duration + 10
-        if is_macos():
-            return self._record_macos(audio_file, timeout)
-        return self._record_linux(audio_file, timeout)
+        return self._record_macos(audio_file, timeout) if is_macos() else self._record_linux(audio_file, timeout)
 
     def _record_macos(self, audio_file: Path, timeout: int) -> Path | None:
         device = f":{self.config.headphone_mic}" if (self.config.headphone_mic and self.config.headphone_mic != "default") else ":default"
@@ -274,8 +211,7 @@ class LegacyAudioProcessor:
         sox_cmd = ["sox", "-q", "-t", "raw", "-r", "16000", "-e", "signed-integer", "-b", "16", "-c", "1", "-", str(audio_file),
                    "silence", "1", str(self.config.silence_start_duration), self.config.silence_start_threshold,
                    "1", str(self.config.silence_end_duration), self.config.silence_end_threshold,
-                   "trim", "0", str(self.config.max_recording_duration),
-                   "pad", "0.3", "0.3"]
+                   "trim", "0", str(self.config.max_recording_duration), "pad", "0.3", "0.3"]
         ffmpeg_proc, sox_proc = None, None
         try:
             ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -287,7 +223,7 @@ class LegacyAudioProcessor:
             except subprocess.TimeoutExpired: ffmpeg_proc.kill(); ffmpeg_proc.wait()
             if sox_proc.returncode != 0:
                 self._rec_fails += 1
-                if self._rec_fails >= 3: tlog.warn(f"Recording failed {self._rec_fails}x in a row")
+                if self._rec_fails >= 3: tlog.warn(f"Recording failed {self._rec_fails}x")
                 audio_file.unlink(missing_ok=True)
                 return None
             return self._check_audio(audio_file)
@@ -295,7 +231,7 @@ class LegacyAudioProcessor:
             self._rec_fails += 1
             if sox_proc: sox_proc.kill(); sox_proc.wait()
             if ffmpeg_proc: ffmpeg_proc.kill(); ffmpeg_proc.wait()
-            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles - mic working?")
+            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles")
             audio_file.unlink(missing_ok=True)
             return None
         except Exception as e:
@@ -313,21 +249,19 @@ class LegacyAudioProcessor:
         cmd.extend(["-q", str(audio_file), "silence",
                     "1", str(self.config.silence_start_duration), self.config.silence_start_threshold,
                     "1", str(self.config.silence_end_duration), self.config.silence_end_threshold,
-                    "trim", "0", str(self.config.max_recording_duration),
-                    "pad", "0.3", "0.3"])
+                    "trim", "0", str(self.config.max_recording_duration), "pad", "0.3", "0.3"])
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             if result.returncode != 0:
                 self._rec_fails += 1
                 if self._rec_fails >= 3:
-                    stderr = result.stderr.decode(errors="replace").strip()
-                    tlog.warn(f"Recording failed {self._rec_fails}x: {stderr[:120]}")
+                    tlog.warn(f"Recording failed {self._rec_fails}x: {result.stderr.decode(errors='replace')[:120]}")
                 audio_file.unlink(missing_ok=True)
                 return None
             return self._check_audio(audio_file)
         except subprocess.TimeoutExpired:
             self._rec_fails += 1
-            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles - mic working?")
+            if self._rec_fails >= 3: tlog.warn(f"No audio for {self._rec_fails} cycles")
             audio_file.unlink(missing_ok=True)
             return None
         except Exception as e:
@@ -343,13 +277,11 @@ class LegacyAudioProcessor:
             self._rec_fails = 0
             tlog.info(f"Recorded {size} bytes")
             return audio_file
-        tlog.warn(f"Too small ({size}B < {self.config.min_file_size}B), discarding")
+        tlog.warn(f"Too small ({size}B), discarding")
         audio_file.unlink()
         return None
 
     def process_audio(self, audio_file: Path) -> bool:
         from .typer import type_text
         text = self.server.transcribe(audio_file)
-        if text:
-            return type_text(text)
-        return False
+        return type_text(text) if text else False

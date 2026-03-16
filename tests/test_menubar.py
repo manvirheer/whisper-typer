@@ -12,14 +12,14 @@ class TestStateIconMapping:
     """Test that every state has an icon and title mapping."""
 
     def test_all_states_have_icons(self):
-        from whisper_voice_typing.menubar import _STATE_ICONS
+        from whisper_voice_typing.menubar import _ICONS
         for state in State:
-            assert state in _STATE_ICONS, f"{state.name} missing from _STATE_ICONS"
+            assert state in _ICONS, f"{state.name} missing from _ICONS"
 
     def test_all_states_have_titles(self):
-        from whisper_voice_typing.menubar import _STATE_TITLES
+        from whisper_voice_typing.menubar import _TITLES
         for state in State:
-            assert state in _STATE_TITLES, f"{state.name} missing from _STATE_TITLES"
+            assert state in _TITLES, f"{state.name} missing from _TITLES"
 
 
 class TestStateUpdate:

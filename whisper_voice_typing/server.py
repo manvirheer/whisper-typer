@@ -4,6 +4,7 @@ import requests
 
 from .utils import log, tlog
 
+
 class WhisperServer:
     def __init__(self, config):
         self.config = config
@@ -39,7 +40,6 @@ class WhisperServer:
         try:
             self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             self.config.server_pid_file.write_text(str(self.process.pid))
-
             for _ in range(50):
                 try:
                     requests.get(f"http://{self.config.server_host}:{self.config.server_port}", timeout=1)
@@ -48,7 +48,6 @@ class WhisperServer:
                     return True
                 except requests.RequestException:
                     time.sleep(0.2)
-
             tlog.error("Server start timed out")
             return False
         except Exception as e:
@@ -69,10 +68,6 @@ class WhisperServer:
         self.config.server_pid_file.unlink(missing_ok=True)
 
     def transcribe(self, audio_file: Path) -> str | None:
-        """Transcribe audio file via server with direct CLI fallback.
-
-        Uses exponential backoff on repeated server failures.
-        """
         start = time.time()
 
         if self._transcribe_fails >= 3:
@@ -132,7 +127,8 @@ class WhisperServer:
 
     def _transcribe_direct(self, audio_file: Path) -> str | None:
         cmd = [str(self.config.whisper_executable), "-m", str(self.config.whisper_model),
-               "-f", str(audio_file), "-t", str(self.config.thread_count), "--no-timestamps", "--no-prints", "--flash-attn"]
+               "-f", str(audio_file), "-t", str(self.config.thread_count),
+               "--no-timestamps", "--no-prints", "--flash-attn"]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:

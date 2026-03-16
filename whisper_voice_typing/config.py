@@ -1,8 +1,8 @@
 import os, shutil, sys
 from pathlib import Path
 from dataclasses import dataclass, field
-
 from .utils import is_macos
+
 
 def _find_whisper_dir() -> Path:
     if d := os.environ.get("WHISPER_CPP_DIR"): return Path(d).expanduser()
@@ -10,16 +10,16 @@ def _find_whisper_dir() -> Path:
         if candidate.exists(): return candidate
     return Path.home() / ".local/share/whisper.cpp"
 
+
 @dataclass
 class Config:
     whisper_dir: Path = field(default_factory=_find_whisper_dir)
     headphone_mic: str = field(default_factory=lambda: os.environ.get("WHISPER_MIC", ""))
-
     whisper_executable: Path = field(init=False)
     whisper_model: Path = field(init=False)
     server_binary: Path = field(init=False)
 
-    # audio format
+    # audio
     sample_rate: int = 16000
     channels: int = 1
     bit_depth: int = 16
@@ -29,24 +29,24 @@ class Config:
     server_port: int = 8080
     server_pid_file: Path = Path("/tmp/whisper_server.pid")
 
-    # sox silence detection (linux / legacy macos path)
+    # sox silence detection (legacy)
     silence_start_duration: float = 0.05
     silence_start_threshold: str = "1.5%"
     silence_end_duration: float = 2.0
     silence_end_threshold: str = "1%"
 
-    # recording limits
+    # recording
     max_recording_duration: int = 30
-    min_file_size: int = 8192              # ~0.25s of audio
+    min_file_size: int = 8192
 
-    # VAD settings (macOS new pipeline)
-    vad_threshold: float = 0.5            # silero confidence threshold
-    vad_confirmation_ms: int = 300        # ms of sustained speech to confirm detection
-    vad_silence_ms: int = 2000            # ms of silence to end recording
-    pre_roll_ms: int = 500                # ms of audio to keep before VAD trigger
+    # VAD
+    vad_threshold: float = 0.5
+    vad_confirmation_ms: int = 300
+    vad_silence_ms: int = 2000
+    pre_roll_ms: int = 500
 
     # menu bar
-    menu_update_interval: float = 0.1     # seconds between UI poll cycles
+    menu_update_interval: float = 0.1
     transcription_history_size: int = 5
 
     # general
@@ -76,15 +76,10 @@ class Config:
         if not self.whisper_model.exists(): errors.append(f"model not found: {self.whisper_model}")
 
         if use_new_pipeline and is_macos():
-            # new pipeline: sounddevice + silero + rumps (no sox/ffmpeg needed for capture)
-            try:
-                import sounddevice  # noqa: F401
-            except ImportError:
-                errors.append("sounddevice not installed: pip install whisper-typer[macos]")
+            try: import sounddevice  # noqa: F401
+            except ImportError: errors.append("sounddevice not installed: pip install whisper-typer[macos]")
         else:
-            # legacy pipeline: sox + ffmpeg/xdotool
-            required = ['rec', 'ffmpeg', 'osascript'] if is_macos() else ['rec', 'xdotool']
-            for cmd in required:
+            for cmd in (['rec', 'ffmpeg', 'osascript'] if is_macos() else ['rec', 'xdotool']):
                 if not shutil.which(cmd): errors.append(f"command not found: {cmd}")
 
         if errors:
