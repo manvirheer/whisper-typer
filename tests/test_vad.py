@@ -4,7 +4,7 @@ import struct, math
 import pytest
 from whisper_voice_typing.vad import VAD
 
-FRAME_SAMPLES = 1600  # 100ms at 16kHz (what the audio pipeline sends)
+FRAME_SAMPLES = 512  # 32ms at 16kHz (Silero's native chunk, what the audio pipeline sends)
 
 
 class TestRMSFallbackVAD:

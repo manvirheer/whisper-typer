@@ -93,9 +93,10 @@ class AudioPipeline:
         device = None
         if self.config.headphone_mic and self.config.headphone_mic != "default":
             device = self.config.headphone_mic
+        # 512 samples = 32ms at 16kHz, matches Silero VAD's native chunk size
         self._stream = sd.RawInputStream(
             samplerate=self.config.sample_rate, channels=self.config.channels,
-            dtype="int16", blocksize=int(self.config.sample_rate * 0.1),
+            dtype="int16", blocksize=512,
             device=device, callback=self._audio_callback,
         )
         self._stream.start()

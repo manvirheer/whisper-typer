@@ -41,7 +41,7 @@ class Config:
 
     # VAD
     vad_threshold: float = 0.5
-    vad_confirmation_ms: int = 300
+    vad_confirmation_ms: int = 96         # ~3 frames at 32ms each
     vad_silence_ms: int = 2000
     pre_roll_ms: int = 500
 

@@ -99,8 +99,9 @@ class WhisperVoiceTyping:
 
         silence_frames = 0
         speech_frames = 0
-        confirmation_frames = self.config.vad_confirmation_ms // 100
-        silence_end_frames = self.config.vad_silence_ms // 100
+        frame_ms = 32  # 512 samples at 16kHz
+        confirmation_frames = self.config.vad_confirmation_ms // frame_ms
+        silence_end_frames = self.config.vad_silence_ms // frame_ms
         last_duration_s = -1
 
         while self.running:
