@@ -4,8 +4,9 @@ import logging, struct, math
 
 log = logging.getLogger("whisper_voice_typing")
 
-FRAME_SAMPLES = 1600  # 100ms at 16kHz
-FRAME_BYTES = FRAME_SAMPLES * 2
+# silero at 16kHz requires exactly 512 samples per chunk
+SILERO_CHUNK = 512
+SILERO_CHUNK_BYTES = SILERO_CHUNK * 2
 
 
 class VAD:
@@ -24,6 +25,11 @@ class VAD:
             self._backend = "rms"
 
     def is_speech(self, frame: bytes, sample_rate: int = 16000) -> bool:
+        """Check if a frame (any size) contains speech.
+
+        For Silero, splits the frame into 512-sample chunks and returns
+        True if any chunk is detected as speech.
+        """
         if self._backend == "silero":
             return self._silero_detect(frame, sample_rate)
         return self._rms_detect(frame)
@@ -32,8 +38,13 @@ class VAD:
         try:
             import torch
             samples = struct.unpack(f"<{len(frame) // 2}h", frame)
-            tensor = torch.FloatTensor(samples) / 32768.0
-            return self._model(tensor, sample_rate).item() >= self._threshold
+            # process in 512-sample chunks as required by silero
+            for i in range(0, len(samples) - SILERO_CHUNK + 1, SILERO_CHUNK):
+                chunk = samples[i:i + SILERO_CHUNK]
+                tensor = torch.FloatTensor(chunk) / 32768.0
+                if self._model(tensor, sample_rate).item() >= self._threshold:
+                    return True
+            return False
         except Exception as e:
             log.warning(f"VAD: Silero error ({e}), switching to RMS")
             self._backend = "rms"
