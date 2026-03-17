@@ -133,11 +133,19 @@ if [ ! -d "models/ggml-${MODEL}-encoder.mlmodelc" ]; then
     echo ""
     echo "CoreML Neural Engine encoder speeds up inference ~2x."
     echo "Generating it takes 10-60 minutes (one-time cost)."
-    read -p "Generate CoreML model? [Y/n] " -n 1 -r
+    echo "Requires Python <=3.13 and compatible coremltools."
+    read -p "Generate CoreML model? [y/N] " -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        python3 -m pip install ane_transformers openai-whisper coremltools 'numpy<2'
-        ./models/generate-coreml-model.sh "$MODEL"
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if python3 -m pip install ane_transformers openai-whisper coremltools 'numpy<2' && \
+           ./models/generate-coreml-model.sh "$MODEL"; then
+            echo "CoreML encoder generated successfully."
+        else
+            echo ""
+            echo "CoreML generation failed (likely Python/coremltools version mismatch)."
+            echo "This is optional — Metal GPU acceleration is still active."
+            echo "The app will work fine without it."
+        fi
     fi
 fi
 
