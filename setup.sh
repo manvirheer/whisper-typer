@@ -39,12 +39,23 @@ echo ""
 # ── Virtual environment ──────────────────────────────────────────────────────
 
 CREATED_VENV=false
+
+# Find best Python: prefer 3.12/3.13 for coremltools compatibility, fall back to python3
+PYTHON=python3
+for candidate in python3.12 python3.13; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
 if [ -z "$VIRTUAL_ENV" ]; then
     echo "Warning: not running in a virtual environment."
+    echo "Using: $($PYTHON --version)"
     read -p "Create .venv in project directory? [Y/n] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        python3 -m venv .venv
+        $PYTHON -m venv .venv
         source .venv/bin/activate
         CREATED_VENV=true
         echo "Created and activated .venv"
