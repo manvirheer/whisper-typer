@@ -1,68 +1,54 @@
 # whisper-typer
 
-local speech-to-text that types wherever your cursor is. runs [whisper.cpp](https://github.com/ggerganov/whisper.cpp) on your machine — no API calls, no cloud, no latency.
+local speech to text. runs whisper.cpp on your mac. talks, types. no cloud, no api, no latency.
 
-uses Metal + CoreML + Neural Engine on Apple Silicon for fast inference.
-
-## requirements
-
-- macOS with Apple Silicon (M1/M2/M3/M4)
-- Xcode Command Line Tools (`xcode-select --install`)
-- cmake (`brew install cmake`)
+metal + coreml + neural engine. apple silicon only.
 
 ## setup
 
-```bash
+```
 git clone https://github.com/manvirheer/whisper-typer.git
 cd whisper-typer
 ./setup.sh
 ```
 
-setup.sh handles everything: virtual environment, Python dependencies, building whisper.cpp, model download, and VAD setup.
+setup.sh does everything. venv, deps, builds whisper.cpp, downloads model, picks the right size for your hardware.
 
-grant accessibility when prompted: System Settings > Privacy & Security > Accessibility.
+grant accessibility access when it asks. system settings > privacy > accessibility.
 
-## usage
+## run
 
-```bash
+```
 wv
 ```
 
-that's it. talk and it types. silence detection handles start/stop automatically.
+talk and it types wherever your cursor is. silence detection handles start and stop.
 
-```
-────────────────────────────────────────────────────────────────────────────────
-TIME       │ LEVEL    │ MESSAGE
-────────────────────────────────────────────────────────────────────────────────
-14:23:01   │ INFO     │ whisper-typer activated (menu bar mode)
-14:23:01   │ INFO     │ Threads: 8
-14:23:05   │ INFO     │ Listening...
-14:23:09   │ INFO     │ Recorded 48320 bytes
-14:23:10   │ SUCCESS  │ Transcribed in 823ms via server
-────────────────────────────────────────────────────────────────────────────────
-```
-
-## what's whisper.cpp
-
-[whisper.cpp](https://github.com/ggerganov/whisper.cpp) is a C/C++ port of OpenAI's [Whisper](https://github.com/openai/whisper) speech recognition model. it runs locally on your hardware with no python runtime overhead. the `setup.sh` script clones it, builds with GPU acceleration, and downloads the model.
+you get a menu bar icon. switch mics, pause, force transcribe, see history. all from the menu bar.
 
 ## config
 
-env vars, all optional:
+env vars. all optional.
 
 | var | default | what |
 |-----|---------|------|
-| `WHISPER_CPP_DIR` | `~/.local/share/whisper.cpp` | whisper.cpp install path |
+| `WHISPER_CPP_DIR` | `~/.local/share/whisper.cpp` | whisper.cpp path |
 | `WHISPER_MODEL` | `ggml-large-v3-turbo.bin` | model file |
-| `WHISPER_MIC` | system default | mic device name |
+| `WHISPER_MIC` | system default | mic device |
 
-```bash
+```
 WHISPER_MIC="MacBook Pro Microphone" wv
 ```
 
-## install as launch agent
+## launch agent
 
-```bash
-wv install    # start on login
-wv uninstall  # remove
 ```
+wv install
+wv uninstall
+```
+
+## how it works
+
+whisper.cpp is a c++ port of openai whisper. runs locally, no python inference overhead. silero vad detects when you start and stop talking. 512 sample chunks, adaptive silence timeout that learns your speech patterns. pre roll buffer so it never clips the start of your sentence.
+
+three threads. capture thread writes audio to a ring buffer. processing thread runs vad and sends to whisper server for transcription. main thread runs the menu bar.
