@@ -38,7 +38,7 @@ class TestConfig:
         assert config.vad_silence_min_ms == 800
         assert config.vad_silence_max_ms == 2500
         assert config.pre_roll_ms == 500
-        assert config.max_recording_duration == 30
+        assert config.max_recording_duration == 45
         assert config.transcription_history_size == 5
 
     def test_model_env_override(self, monkeypatch):
@@ -53,6 +53,26 @@ class TestConfig:
     def test_thread_count_bounded(self):
         config = Config()
         assert 1 <= config.thread_count <= 8
+
+    def test_max_recording_duration_default(self, monkeypatch):
+        monkeypatch.delenv("WHISPER_MAX_RECORDING_DURATION", raising=False)
+        config = Config()
+        assert config.max_recording_duration == 45
+
+    def test_max_recording_duration_env_override(self, monkeypatch):
+        monkeypatch.setenv("WHISPER_MAX_RECORDING_DURATION", "60")
+        config = Config()
+        assert config.max_recording_duration == 60
+
+    def test_command_delay_ms_default(self, monkeypatch):
+        monkeypatch.delenv("WHISPER_COMMAND_DELAY_MS", raising=False)
+        config = Config()
+        assert config.command_delay_ms == 300
+
+    def test_command_delay_ms_env_override(self, monkeypatch):
+        monkeypatch.setenv("WHISPER_COMMAND_DELAY_MS", "500")
+        config = Config()
+        assert config.command_delay_ms == 500
 
 
 class TestValidation:

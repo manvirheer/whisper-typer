@@ -29,8 +29,13 @@ class Config:
     server_pid_file: Path = Path("/tmp/whisper_server.pid")
 
     # recording
-    max_recording_duration: int = 30
+    max_recording_duration: int = field(
+        default_factory=lambda: int(os.environ.get("WHISPER_MAX_RECORDING_DURATION", "45"))
+    )
     min_file_size: int = 8192
+    command_delay_ms: int = field(
+        default_factory=lambda: int(os.environ.get("WHISPER_COMMAND_DELAY_MS", "300"))
+    )
 
     # VAD
     vad_threshold: float = 0.5
