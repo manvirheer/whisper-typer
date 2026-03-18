@@ -127,6 +127,40 @@ class TestDoTranscribe:
         self.app._do_transcribe()
         assert self.app.state_machine.state == State.LISTENING
 
+    @patch("whisper_voice_typing.app.execute_command", return_value=True)
+    @patch("whisper_voice_typing.app.parse_command", return_value=("hello", 36))
+    def test_transcription_with_voice_command(self, mock_parse, mock_exec):
+        from pathlib import Path
+        audio_file = MagicMock(spec=Path)
+        self.app._audio.save_recording.return_value = audio_file
+        self.app.server.transcribe = MagicMock(return_value="hello command enter")
+        self.app._do_transcribe()
+        mock_parse.assert_called_once_with("hello command enter")
+        self.app._type_text.assert_called_with("hello")
+        mock_exec.assert_called_once_with(36, self.app.config.command_delay_ms)
+
+    @patch("whisper_voice_typing.app.execute_command")
+    @patch("whisper_voice_typing.app.parse_command", return_value=("hello world", None))
+    def test_transcription_without_command(self, mock_parse, mock_exec):
+        from pathlib import Path
+        audio_file = MagicMock(spec=Path)
+        self.app._audio.save_recording.return_value = audio_file
+        self.app.server.transcribe = MagicMock(return_value="hello world")
+        self.app._do_transcribe()
+        self.app._type_text.assert_called_with("hello world")
+        mock_exec.assert_not_called()
+
+    @patch("whisper_voice_typing.app.execute_command", return_value=True)
+    @patch("whisper_voice_typing.app.parse_command", return_value=("", 36))
+    def test_command_only_no_text_typed(self, mock_parse, mock_exec):
+        from pathlib import Path
+        audio_file = MagicMock(spec=Path)
+        self.app._audio.save_recording.return_value = audio_file
+        self.app.server.transcribe = MagicMock(return_value="command enter")
+        self.app._do_transcribe()
+        self.app._type_text.assert_not_called()
+        mock_exec.assert_called_once_with(36, 0)  # no delay when no text
+
 
 class TestCheckSingleInstance:
     def test_writes_pid_file(self, tmp_path):

@@ -13,6 +13,7 @@ from .config import Config
 from .server import WhisperServer
 from .state import State, StateMachine
 from .utils import log, tlog, setup_gpu_environment
+from .commands import parse_command, execute_command
 
 
 class WhisperVoiceTyping:
@@ -305,13 +306,22 @@ class WhisperVoiceTyping:
             audio_file.unlink(missing_ok=True)
 
             if text:
+                cleaned_text, keycode = parse_command(text)
                 self.state_machine.transition(State.TYPING)
                 self._ui_queue.put(StateUpdate(State.TYPING))
-                self._ui_queue.put(TranscriptionResult(text))
-                if self._type_text(text):
-                    tlog.info(f"Typed: {text[:60]}{'...' if len(text) > 60 else ''}")
-                else:
-                    tlog.error("Failed to type text")
+                # Send TranscriptionResult before typing (matches original ordering —
+                # UI update is non-blocking and should reflect state immediately)
+                self._ui_queue.put(TranscriptionResult(cleaned_text if cleaned_text else text))
+                if cleaned_text:
+                    if self._type_text(cleaned_text):
+                        tlog.info(f"Typed: {cleaned_text[:60]}{'...' if len(cleaned_text) > 60 else ''}")
+                    else:
+                        tlog.error("Failed to type text")
+                if keycode is not None:
+                    tlog.info(f"Voice command detected: keycode={keycode}")
+                    delay = self.config.command_delay_ms if cleaned_text else 0
+                    if not execute_command(keycode, delay):
+                        tlog.error("Failed to execute voice command")
             else:
                 self.state_machine.transition(State.LISTENING)
                 self._ui_queue.put(StateUpdate(State.LISTENING))
