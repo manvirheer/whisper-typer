@@ -45,21 +45,45 @@ def _type_native(text: str) -> bool:
     return True
 
 
-def _send_cmd_v() -> bool:
+def send_key(keycode: int, flags: int = 0) -> bool:
     try:
-        key_down = CGEventCreateKeyboardEvent(None, 9, True)
-        key_up = CGEventCreateKeyboardEvent(None, 9, False)
-        if key_down is None or key_up is None:
-            log.error("CGEvent creation failed - check Accessibility permissions")
-            return False
-        CGEventSetFlags(key_down, kCGEventFlagMaskCommand)
-        CGEventSetFlags(key_up, kCGEventFlagMaskCommand)
-        CGEventPost(kCGHIDEventTap, key_down)
-        CGEventPost(kCGHIDEventTap, key_up)
-        return True
+        return _send_key_native(keycode, flags) if _HAS_PYOBJC else _send_key_subprocess(keycode)
     except Exception as e:
-        log.error(f"CGEvent failed: {e}")
+        log.error(f"send_key failed: {e}")
         return False
+
+
+def _send_key_native(keycode: int, flags: int = 0) -> bool:
+    key_down = CGEventCreateKeyboardEvent(None, keycode, True)
+    key_up = CGEventCreateKeyboardEvent(None, keycode, False)
+    if key_down is None or key_up is None:
+        log.error("CGEvent creation failed - check Accessibility permissions")
+        return False
+    if flags:
+        CGEventSetFlags(key_down, flags)
+        CGEventSetFlags(key_up, flags)
+    CGEventPost(kCGHIDEventTap, key_down)
+    CGEventPost(kCGHIDEventTap, key_up)
+    return True
+
+
+def _send_key_subprocess(keycode: int) -> bool:
+    result = subprocess.run(
+        ["osascript", "-e", f'tell application "System Events" to key code {keycode}'],
+        capture_output=True, text=True, timeout=10,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        if "not allowed" in stderr or "1002" in stderr:
+            log.error("Accessibility permission denied - System Settings > Privacy & Security > Accessibility")
+        else:
+            log.error(f"osascript key code failed: {stderr}")
+        return False
+    return True
+
+
+def _send_cmd_v() -> bool:
+    return send_key(9, kCGEventFlagMaskCommand if _HAS_PYOBJC else 0)
 
 
 def _type_subprocess(text: str) -> bool:

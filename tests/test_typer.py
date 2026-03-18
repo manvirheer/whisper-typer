@@ -119,7 +119,51 @@ class TestNativeMacOS:
         assert pb.clearContents.call_count == 1  # no restore
 
 
+class TestSendKey:
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
+    @patch("whisper_voice_typing.typer.CGEventPost")
+    @patch("whisper_voice_typing.typer.CGEventSetFlags")
+    @patch("whisper_voice_typing.typer.CGEventCreateKeyboardEvent")
+    def test_send_key_no_flags(self, mock_create, mock_flags, mock_post):
+        mock_create.side_effect = [MagicMock(), MagicMock()]
+        from whisper_voice_typing.typer import send_key
+        assert send_key(36) is True
+        assert mock_create.call_count == 2
+        mock_create.assert_any_call(None, 36, True)
+        mock_create.assert_any_call(None, 36, False)
+        assert mock_post.call_count == 2
+        mock_flags.assert_not_called()
+
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
+    @patch("whisper_voice_typing.typer.CGEventPost")
+    @patch("whisper_voice_typing.typer.CGEventSetFlags")
+    @patch("whisper_voice_typing.typer.CGEventCreateKeyboardEvent")
+    def test_send_key_with_flags(self, mock_create, mock_flags, mock_post):
+        mock_create.side_effect = [MagicMock(), MagicMock()]
+        from whisper_voice_typing.typer import send_key
+        assert send_key(9, 0x100000) is True
+        assert mock_flags.call_count == 2
+        assert mock_post.call_count == 2
+
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
+    @patch("whisper_voice_typing.typer.CGEventCreateKeyboardEvent", return_value=None)
+    def test_send_key_returns_false_on_null_event(self, _):
+        from whisper_voice_typing.typer import send_key
+        assert send_key(36) is False
+
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", False)
+    @patch("whisper_voice_typing.typer.subprocess.run")
+    def test_send_key_subprocess_fallback(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stderr="")
+        from whisper_voice_typing.typer import send_key
+        assert send_key(36) is True
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert "key code 36" in cmd[-1]
+
+
 class TestSendCmdV:
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
     @patch("whisper_voice_typing.typer.CGEventPost")
     @patch("whisper_voice_typing.typer.CGEventSetFlags")
     @patch("whisper_voice_typing.typer.CGEventCreateKeyboardEvent")
@@ -130,6 +174,7 @@ class TestSendCmdV:
         assert mock_create.call_count == 2
         assert mock_post.call_count == 2
 
+    @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
     @patch("whisper_voice_typing.typer.CGEventCreateKeyboardEvent", return_value=None)
     def test_returns_false_on_null_event(self, _):
         from whisper_voice_typing.typer import _send_cmd_v
