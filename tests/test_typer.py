@@ -132,7 +132,7 @@ class TestSendKey:
         mock_create.assert_any_call(None, 36, True)
         mock_create.assert_any_call(None, 36, False)
         assert mock_post.call_count == 2
-        mock_flags.assert_not_called()
+        assert mock_flags.call_count == 2
 
     @patch("whisper_voice_typing.typer._HAS_PYOBJC", True)
     @patch("whisper_voice_typing.typer.CGEventPost")

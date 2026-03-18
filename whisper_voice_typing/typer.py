@@ -59,9 +59,8 @@ def _send_key_native(keycode: int, flags: int = 0) -> bool:
     if key_down is None or key_up is None:
         log.error("CGEvent creation failed - check Accessibility permissions")
         return False
-    if flags:
-        CGEventSetFlags(key_down, flags)
-        CGEventSetFlags(key_up, flags)
+    CGEventSetFlags(key_down, flags)
+    CGEventSetFlags(key_up, flags)
     CGEventPost(kCGHIDEventTap, key_down)
     CGEventPost(kCGHIDEventTap, key_up)
     return True
