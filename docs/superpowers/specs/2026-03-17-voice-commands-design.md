@@ -43,7 +43,7 @@ A dict mapping command names (lowercase) to macOS virtual keycodes. Adding a new
 1. Strip all trailing punctuation characters (`.!?,;:`) from the transcribed text. Multiple trailing characters are stripped (e.g., "command enter!!!" or "command enter...").
 2. Create a lowercased copy for matching purposes.
 3. Check if the lowercased copy ends with `"command {name}"` for any name in `COMMANDS`.
-4. If match: slice the **original-cased** text (not the lowercased copy) to extract the portion before "command {name}". Return `(original_text_before_command.rstrip(), keycode)`. This preserves the user's original casing in the typed output.
+4. If match: slice the **original-cased** text (not the lowercased copy) to extract the portion before "command {name}". Return `(original_text_before_command.strip(), keycode)`. Strip both sides — leading whitespace in typed output would be a bug. This preserves the user's original casing in the typed output.
 5. If the remaining text is empty (user only said "command enter"): return `("", keycode)`.
 6. No match: return `(original_text, None)` — the unmodified input.
 
@@ -93,10 +93,12 @@ if text:
         type_text(cleaned_text)
         tlog.info(f"Typed: {cleaned_text[:60]}...")
     if keycode is not None:
+        tlog.info(f"Voice command detected: keycode={keycode}")
         delay = self.config.command_delay_ms if cleaned_text else 0
         if not execute_command(keycode, delay):
             tlog.error("Failed to execute voice command")
-    # UI history shows cleaned text (without "command enter" suffix)
+    # UI history shows cleaned text. When cleaned_text is empty (user said only
+    # "command enter"), we intentionally show the raw text so the history isn't blank.
     ui_queue.put(TranscriptionResult(cleaned_text if cleaned_text else text))
 ```
 
@@ -139,3 +141,4 @@ Key behaviors:
 
 - The ~800ms total deaf window (300ms command delay + 500ms TYPING state sleep) is acceptable — the user expects a brief pause after sending a message.
 - The `send_key` helper in `typer.py` uses `osascript -e 'tell application "System Events" to key code {keycode}'` as the subprocess fallback, which supports arbitrary keycodes — same virtual keycode space as CGEvent.
+- **Limitation:** The osascript fallback does not currently translate modifier flags. For the current "enter" command (no modifiers) this is fine. If a future command needs modifiers (e.g., Shift+Tab), the fallback would need to be extended to emit `using {shift down}` etc.
